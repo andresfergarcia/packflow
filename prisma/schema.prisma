@@ -1,0 +1,411 @@
+generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native"]
+}
+
+datasource db {
+    provider = "sqlite"
+    url      = "file:./dev.db"
+}
+
+enum Role {
+  OPERATOR
+  TEAM_LEADER
+  PLANT_DIRECTOR
+  MECHANIC
+}
+
+enum MaintenanceType {
+  REPAIR
+  PREVENTIVE
+  PART_CHANGE
+  INSPECTION
+  EMERGENCY
+}
+
+enum MachineStatus {
+  RUNNING
+  STOPPED
+  MAINTENANCE
+  IDLE
+}
+
+enum AlertSeverity {
+  CRITICAL
+  WARNING
+  INFO
+}
+
+enum AlertStatus {
+  ACTIVE
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum IncidentStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  ESCALATED
+}
+
+enum IncidentPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum PalletStatus {
+  IN_PROGRESS
+  COMPLETED
+  DISPATCHED
+}
+
+enum ShiftType {
+  MORNING
+  AFTERNOON
+  NIGHT
+}
+
+model Agency {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  contactName String?
+  contactEmail String?
+  contactPhone String?
+  address     String?
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+
+  @@index([name])
+}
+
+model User {
+  id             String    @id @default(cuid())
+  name           String
+  email          String    @unique
+  password       String
+  role           Role      @default(OPERATOR)
+  avatar         String?
+  phone          String?
+  isActive       Boolean   @default(true)
+  agencyId       String?
+  position       String?
+  startDate      DateTime?
+  skills         String?   // Fortalezas / habilidades destacadas
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  agency         Agency?   @relation(fields: [agencyId], references: [id])
+  assignments    StaffAssignment[]
+  incidents      Incident[]  @relation("ReportedBy")
+  resolvedIncidents Incident[] @relation("ResolvedBy")
+  alerts         Alert[]
+  wasteEntries   WasteEntry[]
+  maintenanceReports MaintenanceReport[]
+  ratings        StaffRating[]
+  staffIncidents StaffIncident[]
+
+  @@index([role])
+  @@index([email])
+  @@index([agencyId])
+}
+
+model Machine {
+  id             String        @id @default(cuid())
+  name           String        @unique
+  model          String
+  type           String
+  status         MachineStatus @default(IDLE)
+  currentProduct String?
+  dailyTarget    Int           @default(0)
+  dailyProduced  Int           @default(0)
+  oee            Float         @default(0)
+  uptime         Float         @default(100)
+  speed          Float         @default(0)
+  location       String?
+  imageUrl       String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  productCards   ProductCard[]
+  pallets        Pallet[]
+  incidents      Incident[]
+  alerts         Alert[]
+  assignments    StaffAssignment[]
+  wasteEntries   WasteEntry[]
+  printerConfigs PrinterConfig[]
+  productionLogs ProductionLog[]
+  maintenanceReports MaintenanceReport[]
+
+  @@index([status])
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  name           String
+  sku            String   @unique
+  ean            String?
+  category       String
+  description    String?
+  imageUrl       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  productCards   ProductCard[]
+  pallets        Pallet[]
+
+  @@index([category])
+}
+
+model ProductCard {
+  id             String   @id @default(cuid())
+  productId      String
+  machineId      String
+  dimensions     String?
+  nozzleType     String?
+  nozzleSize     String?
+  glueAmount     Float?
+  glueTemp       Float?
+  printerPos     String?
+  printerSpeed   Float?
+  filmType       String?
+  boxType        String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  product        Product  @relation(fields: [productId], references: [id])
+  machine        Machine  @relation(fields: [machineId], references: [id])
+
+  @@unique([productId, machineId])
+  @@index([machineId])
+}
+
+model Pallet {
+  id             String       @id @default(cuid())
+  palletNumber   String       @unique
+  machineId      String
+  productId      String
+  status         PalletStatus @default(IN_PROGRESS)
+  targetQuantity Int          @default(0)
+  currentQuantity Int         @default(0)
+  shift          ShiftType
+  line           String?
+  location       String?
+  completedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  machine        Machine      @relation(fields: [machineId], references: [id])
+  product        Product      @relation(fields: [productId], references: [id])
+
+  @@index([status])
+  @@index([machineId])
+}
+
+model Incident {
+  id             String          @id @default(cuid())
+  machineId      String
+  reportedById   String
+  resolvedById   String?
+  title          String
+  description    String
+  priority       IncidentPriority @default(MEDIUM)
+  status         IncidentStatus  @default(OPEN)
+  category       String?
+  photoUrl       String?
+  resolution     String?
+  downtimeMinutes Int            @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  resolvedAt     DateTime?
+
+  machine        Machine         @relation(fields: [machineId], references: [id])
+  reportedBy     User            @relation("ReportedBy", fields: [reportedById], references: [id])
+  resolvedBy     User?           @relation("ResolvedBy", fields: [resolvedById], references: [id])
+
+  @@index([status])
+  @@index([machineId])
+  @@index([priority])
+}
+
+model Alert {
+  id             String       @id @default(cuid())
+  machineId      String
+  userId         String?
+  title          String
+  message        String
+  severity       AlertSeverity @default(INFO)
+  status         AlertStatus  @default(ACTIVE)
+  escalationLevel Int         @default(0)
+  whatsappSent   Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  acknowledgedAt DateTime?
+
+  machine        Machine      @relation(fields: [machineId], references: [id])
+  user           User?        @relation(fields: [userId], references: [id])
+
+  @@index([status])
+  @@index([severity])
+  @@index([machineId])
+}
+
+model StaffAssignment {
+  id             String    @id @default(cuid())
+  userId         String
+  machineId      String
+  shift          ShiftType
+  role           String    @default("operator")
+  date           DateTime
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user           User      @relation(fields: [userId], references: [id])
+  machine        Machine   @relation(fields: [machineId], references: [id])
+
+  @@index([date])
+  @@index([userId])
+  @@index([machineId])
+}
+
+model StaffRating {
+  id          String   @id @default(cuid())
+  userId      String
+  ratedById   String?
+  score       Int      // 1-5
+  strengths   String?  // En qué se destaca
+  notes       String?  // Notas adicionales
+  shift       ShiftType?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model StaffIncident {
+  id          String   @id @default(cuid())
+  userId      String
+  reportedById String?
+  title       String
+  description String
+  severity    String   @default("MEDIUM")
+  resolved    Boolean  @default(false)
+  resolution  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  resolvedAt  DateTime?
+
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model WasteEntry {
+  id             String   @id @default(cuid())
+  machineId      String
+  userId         String
+  category       String
+  quantity        Float
+  unit           String   @default("kg")
+  reason         String?
+  shift          ShiftType
+  createdAt      DateTime @default(now())
+
+  machine        Machine  @relation(fields: [machineId], references: [id])
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@index([machineId])
+  @@index([createdAt])
+}
+
+model PrinterConfig {
+  id             String   @id @default(cuid())
+  machineId      String
+  productName    String
+  dateFormat     String   @default("DD/MM/YYYY")
+  printPosition  String?
+  printSpeed     Float?
+  inkType        String?
+  headCleaning   DateTime?
+  lastMaintenance DateTime?
+  status         String   @default("OK")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  machine        Machine  @relation(fields: [machineId], references: [id])
+
+  @@index([machineId])
+}
+
+model ProductionLog {
+  id             String    @id @default(cuid())
+  machineId      String
+  shift          ShiftType
+  date           DateTime
+  produced       Int       @default(0)
+  target         Int       @default(0)
+  downtime       Int       @default(0)
+  oee            Float     @default(0)
+  createdAt      DateTime  @default(now())
+
+  machine        Machine   @relation(fields: [machineId], references: [id])
+
+  @@index([machineId])
+  @@index([date])
+}
+
+model MaintenanceReport {
+  id             String          @id @default(cuid())
+  machineId      String
+  mechanicId     String
+  type           MaintenanceType @default(REPAIR)
+  title          String
+  description    String
+  partsChanged   String?
+  partsUsed      String?
+  timeSpentMin   Int             @default(0)
+  laborCost      Float?          @default(0)
+  partsCost      Float?          @default(0)
+  status         String          @default("COMPLETED")
+  incidentId     String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  machine        Machine         @relation(fields: [machineId], references: [id])
+  mechanic       User            @relation(fields: [mechanicId], references: [id])
+
+  @@index([machineId])
+  @@index([mechanicId])
+  @@index([createdAt])
+}
+
+model Process {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  description    String?
+  category       String?
+  steps          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Report {
+  id             String   @id @default(cuid())
+  title          String
+  type           String
+  period         String
+  generatedBy    String?
+  data           String?
+  createdAt      DateTime @default(now())
+}
